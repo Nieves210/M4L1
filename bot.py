@@ -1,8 +1,11 @@
 import discord
 from discord.ext import commands, tasks
-from logic import DatabaseManager, hide_img
+from logic import DatabaseManager, hide_img, create_collage  
 from config import TOKEN, DATABASE
 import os
+import cv2
+from math import sqrt, ceil, floor
+import numpy as np
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -13,7 +16,6 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 manager = DatabaseManager(DATABASE)
 manager.create_tables()
 
-# Kullanıcı kaydı için bir komut
 @bot.command()
 async def start(ctx):
     user_id = ctx.author.id
@@ -23,7 +25,6 @@ async def start(ctx):
         manager.add_user(user_id, ctx.author.name)
         await ctx.send("""Merhaba! Hoş geldiniz! Başarılı bir şekilde kaydoldunuz! Her dakika yeni resimler alacaksınız ve bunları elde etme şansınız olacak! Bunu yapmak için “Al!” butonuna tıklamanız gerekiyor! Sadece “Al!” butonuna tıklayan ilk üç kullanıcı resmi alacaktır! =)""")
 
-# Resim göndermek için zamanlanmış bir görev
 @tasks.loop(minutes=1)
 async def send_message():
     for user_id in manager.get_users():
@@ -82,6 +83,30 @@ async def on_interaction(interaction):
         else:
             await interaction.response.send_message(content="Maalesef, birisi bu resmi çoktan aldı...", ephemeral=True)
 
+
+@bot.command()
+async def get_my_score(ctx):
+    user_id = ctx.author.id
+    info = manager.get_winners_img(user_id)
+    prizes = [x[0] for x in info]  
+
+    image_paths = os.listdir('img')
+    full_paths = [
+        f'img/{img}' if img in prizes else f'hidden_img/{img}'
+        for img in image_paths
+    ]
+
+    if not full_paths:
+        await ctx.send("Hiç resmin yok!")
+        return
+
+    collage = create_collage(full_paths)
+    result_path = f'temp/collage_{user_id}.jpg'
+    os.makedirs('temp', exist_ok=True)
+    cv2.imwrite(result_path, collage)
+
+    with open(result_path, 'rb') as file:
+        await ctx.send(file=discord.File(file, filename=f'collage_{user_id}.jpg'))
 
 
 @bot.event
